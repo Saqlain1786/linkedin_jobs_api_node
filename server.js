@@ -1,61 +1,44 @@
-const express = require("express");
-const axios = require("axios");
-const cheerio = require("cheerio");
+import express from "express";
+import axios from "axios";
+import cors from "cors";
 
 const app = express();
+app.use(cors());
+
 const PORT = process.env.PORT || 5000;
+
+app.get("/", (req, res) => {
+  res.json({ status: "LinkedIn API running" });
+});
 
 app.get("/search", async (req, res) => {
   try {
-    const { keyword, location, limit, require_remote, require_contract } = req.query;
+    const { keyword, location, limit = 20, require_remote = false } = req.query;
 
-    if (!keyword) return res.status(400).json({ error: "Keyword is required" });
+    const apiUrl = `https://jsearch.p.rapidapi.com/search`;
 
-    const searchUrl = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(
-      keyword
-    )}&location=${encodeURIComponent(location || "United States")}`;
-
-    const response = await axios.get(searchUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+    const response = await axios.get(apiUrl, {
+      params: {
+        query: `${keyword} in ${location}`,
+        num_pages: 1
       },
+      headers: {
+        "x-rapidapi-host": "jsearch.p.rapidapi.com",
+        "x-rapidapi-key": process.env.RAPID_API_KEY
+      }
     });
 
-    const $ = cheerio.load(response.data);
-    let jobs = [];
-
-    $(".base-card").each((i, el) => {
-      if (limit && i >= Number(limit)) return;
-
-      const title = $(el).find(".base-search-card__title").text().trim();
-      const company = $(el).find(".base-search-card__subtitle").text().trim();
-      const loc = $(el).find(".job-search-card__location").text().trim();
-      const jobUrl = $(el).find("a.base-card__full-link").attr("href");
-
-      jobs.push({
-        title,
-        company,
-        location: loc,
-        url: jobUrl,
-      });
+    res.json({
+      jobs: response.data.data || [],
+      paramsUsed: req.query
     });
 
-    return res.json({
-      returned: jobs.length,
-      paramsUsed: req.query,
-      jobs,
-    });
   } catch (err) {
-    console.error("ERROR:", err.message);
-    res.status(500).json({ error: "Failed to scrape LinkedIn" });
+    console.error("API ERROR:", err.message);
+    res.status(500).json({ error: "API error", details: err.message });
   }
 });
 
-app.get("/", (req, res) => {
-  res.json({ status: "LinkedIn Job API is running 🚀" });
+app.listen(PORT, () => {
+  console.log(`API running on port ${PORT}`);
 });
-
-app.listen(PORT, () =>
-  console.log(`Server running on port ${PORT}`)
-);
